@@ -2,14 +2,7 @@
 /* global document, window, Event */
 
 // ✅ 核心修复：文件名改回 PascalCase (大驼峰)，否则 Linux 下找不到文件
-import { LAppDelegate } from '@demo/LAppDelegate.js';
-import * as LAppDefine from '@demo/LAppDefine.js';
-import { LAppModel } from '@demo/LAppModel.js';
-import { LAppPal } from '@demo/LAppPal.js';
-import { LAppView } from '@demo/LAppView.js';
-import { LAppTextureManager } from '@demo/LAppTextureManager.js';
-import { LAppLive2DManager } from '@demo/LAppLive2DManager.js';
-import { LAppGlManager } from '@demo/LAppGlManager.js';
+
 
 import logger from '../logger.js';
 
