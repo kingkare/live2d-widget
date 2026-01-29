@@ -5,7 +5,7 @@
 
 // Recommended to use absolute path for live2d_path parameter
 // live2d_path 参数建议使用绝对路径
-const live2d_path = 'https://cdn.jsdelivr.net/gh/kingkare/live2d-widget/dist/';
+const live2d_path = 'https://gcore.jsdelivr.net/gh/kingkare/live2d-widget/dist/';
 // const live2d_path = '/dist/';
 
 // Method to encapsulate asynchronous resource loading
