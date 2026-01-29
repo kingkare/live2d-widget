@@ -1,23 +1,21 @@
 // @ts-nocheck
 /* global document, window, Event */
 
-// ✅ 1. 引用全部改为小写，确保 Linux/Cloudflare 能找到文件
-import { LAppDelegate } from '@demo/lappdelegate.js';
-import * as LAppDefine from '@demo/lappdefine.js';
-import { LAppModel } from '@demo/lappmodel.js';
-import { LAppPal } from '@demo/lapppal.js';
-
-// ✅ 2. 新增引入：因为没有 LAppSubdelegate 了，我们需要手动引入这些 Manager
-import { LAppView } from '@demo/lappview.js';
-import { LAppTextureManager } from '@demo/lapptexturemanager.js';
-import { LAppLive2DManager } from '@demo/lapplive2dmanager.js';
-import { LAppGlManager } from '@demo/lappglmanager.js';
+// ✅ 核心修复：文件名改回 PascalCase (大驼峰)，否则 Linux 下找不到文件
+import { LAppDelegate } from '@demo/LAppDelegate.js';
+import * as LAppDefine from '@demo/LAppDefine.js';
+import { LAppModel } from '@demo/LAppModel.js';
+import { LAppPal } from '@demo/LAppPal.js';
+import { LAppView } from '@demo/LAppView.js';
+import { LAppTextureManager } from '@demo/LAppTextureManager.js';
+import { LAppLive2DManager } from '@demo/LAppLive2DManager.js';
+import { LAppGlManager } from '@demo/LAppGlManager.js';
 
 import logger from '../logger.js';
 
 LAppPal.printMessage = () => {};
 
-// ✅ 3. 重写 AppSubdelegate：去掉 extends LAppSubdelegate
+// 自定义子委托类
 class AppSubdelegate {
   constructor() {
     // 手动初始化核心管理器
@@ -60,7 +58,10 @@ class AppSubdelegate {
     this._view.initialize();
     this._view.setImages(this._textureManager);
 
-    this._live2dManager.setDelegate(this);
+    // 尝试设置 Delegate，如果 SDK 不支持也不会报错，因为我们在 constructor 里初始化了
+    if (typeof this._live2dManager.setDelegate === 'function') {
+        this._live2dManager.setDelegate(this);
+    }
 
     this._resizeObserver = new window.ResizeObserver(
       (entries) => {
@@ -139,7 +140,7 @@ class AppSubdelegate {
   }
 }
 
-// ✅ 4. AppDelegate 修改
+// 主委托类
 export class AppDelegate extends LAppDelegate {
   constructor() {
     super();
@@ -200,8 +201,9 @@ export class AppDelegate extends LAppDelegate {
     
     if (lapplive2dmanager._models && lapplive2dmanager._models.getSize() > 0) {
         const model = lapplive2dmanager._models.at(0);
-        if (model && model.hitTest(LAppDefine.HitAreaNameBody, x, y)) {
-           // hover event
+        // 如果 SDK 版本支持 hitTest，则调用
+        if (model && typeof model.hitTest === 'function' && model.hitTest(LAppDefine.HitAreaNameBody, x, y)) {
+           // hover logic
         }
     }
   }
@@ -209,7 +211,6 @@ export class AppDelegate extends LAppDelegate {
   onMouseEnd(e) {
     if (this._subdelegates.length === 0) return;
     const lapplive2dmanager = this._subdelegates[0].getLive2DManager();
-    const { x, y } = this.transformOffset(e);
     if(lapplive2dmanager) {
         lapplive2dmanager.onDrag(0.0, 0.0);
     }
@@ -225,7 +226,7 @@ export class AppDelegate extends LAppDelegate {
         
         if (lapplive2dmanager._models && lapplive2dmanager._models.getSize() > 0) {
             const model = lapplive2dmanager._models.at(0);
-            if (model && model.hitTest(LAppDefine.HitAreaNameBody, x, y)) {
+            if (model && typeof model.hitTest === 'function' && model.hitTest(LAppDefine.HitAreaNameBody, x, y)) {
                 window.dispatchEvent(new Event('live2d:tapbody'));
             }
         }
