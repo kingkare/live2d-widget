@@ -1,10 +1,10 @@
 /* global document, window, Event */
 
 import { LAppDelegate } from '@demo/LAppDelegate.js';
-import { LAppSubdelegate } from '@demo/LAppSubdelegate.js';
-import * as LAppDefine from '@demo/LAppDefine.js';
-import { LAppModel } from '@demo/LAppModel.js';
-import { LAppPal } from '@demo/LAppPal';
+import { LAppSubdelegate } from '@demo/lappsubdelegate.js';
+import * as LAppDefine from '@demo/lappDefine.js';
+import { LAppModel } from '@demo/lappModel.js';
+import { LAppPal } from '@demo/lappPal';
 import logger from '../logger.js';
 
 LAppPal.printMessage = () => {};
