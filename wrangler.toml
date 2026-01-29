@@ -1,0 +1,6 @@
+name = "live2d-widgets"
+compatibility_date = "2026-01-30"
+
+# 这一行是关键：告诉 Cloudflare 这是一个纯静态资源项目，文件在 dist 文件夹
+[assets]
+directory = "./dist"
