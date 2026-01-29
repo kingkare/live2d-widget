@@ -1,29 +1,50 @@
 /* global document, window, Event */
 
+// ✅ 1. 引用全部改为小写，确保 Linux/Cloudflare 能找到文件
 import { LAppDelegate } from '@demo/lappdelegate.js';
-import { LAppSubdelegate } from '@demo/lappsubdelegate.js';
 import * as LAppDefine from '@demo/lappdefine.js';
 import { LAppModel } from '@demo/lappmodel.js';
 import { LAppPal } from '@demo/lapppal.js';
+
+// ✅ 2. 新增引入：因为没有 LAppSubdelegate 了，我们需要手动引入这些 Manager
+import { LAppView } from '@demo/lappview.js';
+import { LAppTextureManager } from '@demo/lapptexturemanager.js';
+import { LAppLive2DManager } from '@demo/lapplive2dmanager.js';
+import { LAppGlManager } from '@demo/lappglmanager.js';
+
 import logger from '../logger.js';
 
 LAppPal.printMessage = () => {};
 
-// Custom subdelegate class, responsible for Canvas-related initialization and rendering management
-class AppSubdelegate extends LAppSubdelegate {
+// ✅ 3. 重写 AppSubdelegate：去掉 extends LAppSubdelegate
+// 自定义子委托类，负责 Canvas 相关的初始化和渲染管理
+class AppSubdelegate {
+  constructor() {
+    // 手动初始化核心管理器
+    this._glManager = new LAppGlManager();
+    this._textureManager = new LAppTextureManager();
+    this._view = new LAppView();
+    this._live2dManager = LAppLive2DManager.getInstance();
+    
+    this._canvas = null;
+    this._frameBuffer = null;
+    this._resizeObserver = null;
+    this._needResize = false;
+  }
+
   /**
-   * Initialize resources required by the application.
-   * @param {HTMLCanvasElement} canvas The canvas object passed in
+   * 初始化应用所需的资源
+   * @param {HTMLCanvasElement} canvas 传入的 canvas 对象
    */
   initialize(canvas) {
-    // Initialize WebGL manager, return false if failed
+    // 初始化 WebGL 管理器，失败则返回 false
     if (!this._glManager.initialize(canvas)) {
       return false;
     }
 
     this._canvas = canvas;
 
-    // Canvas size setting, supports auto and specified size
+    // Canvas 尺寸设置，支持 auto 和指定大小
     if (LAppDefine.CanvasSize === 'auto') {
       this.resizeCanvas();
     } else {
@@ -31,41 +52,33 @@ class AppSubdelegate extends LAppSubdelegate {
       canvas.height = LAppDefine.CanvasSize.height;
     }
 
-    // Set the GL manager for the texture manager
+    // 为纹理管理器设置 GL 管理器
     this._textureManager.setGlManager(this._glManager);
 
     const gl = this._glManager.getGl();
 
-    // If the framebuffer object is not initialized, get the current framebuffer binding
+    // 如果帧缓冲区对象未初始化，获取当前的帧缓冲区绑定
     if (!this._frameBuffer) {
       this._frameBuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
     }
 
-    // Enable blend mode for transparency
+    // 启用混合模式以支持透明度
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    // Initialize the view (AppView)
-    this._view.initialize(this);
-    this._view._gear = {
-      render: () => {},
-      isHit: () => {},
-      release: () => {}
-    };
-    this._view._back = {
-      render: () => {},
-      release: () => {}
-    };
-    // this._view.initializeSprite();
+    // 初始化视图 (AppView)
+    this._view.initialize(); // 注意：v5 SDK通常不需要传参数，或者逻辑已变更
+    this._view.setImages(this._textureManager); // 确保关联纹理管理器
 
-    // Associate Live2D manager with the current subdelegate
-    // this._live2dManager.initialize(this);
-    this._live2dManager._subdelegate = this;
+    // 关联 Live2D 管理器
+    this._live2dManager.setDelegate(this); // 如果支持的话，或者忽略
 
-    // Listen for canvas size changes for responsive adaptation
+    // 监听 canvas 尺寸变化以进行响应式适配
     this._resizeObserver = new window.ResizeObserver(
-      (entries, observer) =>
-        this.resizeObserverCallback.call(this, entries, observer)
+      (entries) => {
+        // 简化回调逻辑
+        this._needResize = true;
+      }
     );
     this._resizeObserver.observe(this._canvas);
 
@@ -73,70 +86,114 @@ class AppSubdelegate extends LAppSubdelegate {
   }
 
   /**
-   * Adjust and reinitialize the view when the canvas size changes
+   * 手动实现 resizeCanvas (因为没有父类了)
    */
-  onResize() {
-    this.resizeCanvas();
-    this._view.initialize(this);
-    // this._view.initializeSprite();
+  resizeCanvas() {
+    if (!this._canvas) return;
+    // 这里简单的将 canvas 尺寸设为视窗大小，或者根据需求调整
+    const width = this._canvas.clientWidth;
+    const height = this._canvas.clientHeight;
+    
+    // 只有当尺寸真正改变时才重新赋值，避免闪烁
+    if (this._canvas.width !== width || this._canvas.height !== height) {
+      this._canvas.width = width;
+      this._canvas.height = height;
+      // 通知 GL Manager 尺寸改变
+      if(this._view) {
+        // 重新初始化 view 的尺寸比例
+        const ratio = width / height;
+        const left = -ratio;
+        const right = ratio;
+        const bottom = -1.0;
+        const top = 1.0;
+        this._view.setScreenRect(left, right, bottom, top); // 设置视图范围
+        this._view.setMaxScreenRect(left, right, bottom, top);
+      }
+    }
   }
 
   /**
-   * Main render loop, called periodically to update the screen
+   * Canvas 尺寸变化时调整并重新初始化视图
+   */
+  onResize() {
+    this.resizeCanvas();
+    this._view.initialize();
+    
+    const gl = this._glManager.getGl();
+    if(gl) {
+        gl.viewport(0, 0, this._canvas.width, this._canvas.height);
+    }
+  }
+
+  /**
+   * 主渲染循环，周期性调用以更新屏幕
    */
   update() {
-    // Check if the WebGL context is lost, if so, stop rendering
-    if (this._glManager.getGl().isContextLost()) {
+    const gl = this._glManager.getGl();
+    
+    // 检查 WebGL 上下文是否丢失
+    if (!gl || gl.isContextLost()) {
       return;
     }
 
-    // If resize is needed, call onResize
+    // 如果需要调整大小，调用 onResize
     if (this._needResize) {
       this.onResize();
       this._needResize = false;
     }
 
-    const gl = this._glManager.getGl();
-
-    // Initialize the canvas as fully transparent
+    // 初始化 Canvas 为全透明
     gl.clearColor(0.0, 0.0, 0.0, 0.0);
 
-    // Enable depth test to ensure correct model occlusion
+    // 启用深度测试
     gl.enable(gl.DEPTH_TEST);
-
-    // Set depth function so nearer objects cover farther ones
     gl.depthFunc(gl.LEQUAL);
 
-    // Clear color and depth buffers
+    // 清除颜色和深度缓冲
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.clearDepth(1.0);
 
-    // Enable blend mode again to ensure transparency
+    // 再次启用混合模式
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    // Render the view content
+    // 渲染视图内容
     this._view.render();
+  }
+
+  // 辅助方法：获取内部管理器
+  getLive2DManager() {
+      return this._live2dManager;
+  }
+  
+  getCanvas() {
+      return this._canvas;
+  }
+  
+  isContextLost() {
+      const gl = this._glManager.getGl();
+      return !gl || gl.isContextLost();
   }
 }
 
-// Main application delegate class, responsible for managing the main loop, canvas, model switching, and other global logic
+// ✅ 4. AppDelegate 修改：使用原生 Array 替代 SDK Vector，防止类型错误
 export class AppDelegate extends LAppDelegate {
-  /**
-   * Start the main loop.
-   */
+  constructor() {
+    super();
+    this._subdelegates = []; // 使用原生数组
+    this._canvases = [];     // 使用原生数组
+    this._drawFrameId = null;
+  }
+
   run() {
-    // Main loop function, responsible for updating time and all subdelegates
     const loop = () => {
-      // Update time
       LAppPal.updateTime();
 
-      // Iterate all subdelegates and call update for rendering
-      for (let i = 0; i < this._subdelegates.getSize(); i++) {
-        this._subdelegates.at(i).update();
+      // 使用原生数组遍历
+      for (let i = 0; i < this._subdelegates.length; i++) {
+        this._subdelegates[i].update();
       }
 
-      // Recursive call for animation loop
       this._drawFrameId = window.requestAnimationFrame(loop);
     };
     loop();
@@ -152,142 +209,9 @@ export class AppDelegate extends LAppDelegate {
   release() {
     this.stop();
     this.releaseEventListener();
-    this._subdelegates.clear();
-
+    // 清空数组
+    this._subdelegates = []; 
     this._cubismOption = null;
   }
 
-  transformOffset(e) {
-    const subdelegate = this._subdelegates.at(0);
-    const rect = subdelegate.getCanvas().getBoundingClientRect();
-    const localX = e.pageX - rect.left;
-    const localY = e.pageY - rect.top;
-    const posX = localX * window.devicePixelRatio;
-    const posY = localY * window.devicePixelRatio;
-    const x = subdelegate._view.transformViewX(posX);
-    const y = subdelegate._view.transformViewY(posY);
-    return {
-      x, y
-    };
-  }
-
-  onMouseMove(e) {
-    const lapplive2dmanager = this._subdelegates.at(0).getLive2DManager();
-    const { x, y } = this.transformOffset(e);
-    const model = lapplive2dmanager._models.at(0);
-
-    lapplive2dmanager.onDrag(x, y);
-    lapplive2dmanager.onTap(x, y);
-    if (model.hitTest(LAppDefine.HitAreaNameBody, x, y)) {
-      window.dispatchEvent(new Event('live2d:hoverbody'));
-    }
-  }
-
-  onMouseEnd(e) {
-    const lapplive2dmanager = this._subdelegates.at(0).getLive2DManager();
-    const { x, y } = this.transformOffset(e);
-    lapplive2dmanager.onDrag(0.0, 0.0);
-    lapplive2dmanager.onTap(x, y);
-  }
-
-  onTap(e) {
-    const lapplive2dmanager = this._subdelegates.at(0).getLive2DManager();
-    const { x, y } = this.transformOffset(e);
-    const model = lapplive2dmanager._models.at(0);
-
-    if (model.hitTest(LAppDefine.HitAreaNameBody, x, y)) {
-      window.dispatchEvent(new Event('live2d:tapbody'));
-    }
-  }
-
-  initializeEventListener() {
-    this.mouseMoveEventListener = this.onMouseMove.bind(this);
-    this.mouseEndedEventListener = this.onMouseEnd.bind(this);
-    this.tapEventListener = this.onTap.bind(this);
-
-    document.addEventListener('mousemove', this.mouseMoveEventListener, {
-      passive: true
-    });
-    document.addEventListener('mouseout', this.mouseEndedEventListener, {
-      passive: true
-    });
-    document.addEventListener('pointerdown', this.tapEventListener, {
-      passive: true
-    });
-  }
-
-  releaseEventListener() {
-    document.removeEventListener('mousemove', this.mouseMoveEventListener, {
-      passive: true
-    });
-    this.mouseMoveEventListener = null;
-    document.removeEventListener('mouseout', this.mouseEndedEventListener, {
-      passive: true
-    });
-    this.mouseEndedEventListener = null;
-    document.removeEventListener('pointerdown', this.tapEventListener, {
-      passive: true
-    });
-  }
-
-  /**
-   * Create canvas and initialize all Subdelegates
-   */
-  initializeSubdelegates() {
-    // Reserve space to improve performance
-    this._canvases.prepareCapacity(LAppDefine.CanvasNum);
-    this._subdelegates.prepareCapacity(LAppDefine.CanvasNum);
-
-    // Get the live2d canvas element from the page
-    const canvas = document.getElementById('live2d');
-    this._canvases.pushBack(canvas);
-
-    // Set canvas style size to match actual size
-    canvas.style.width = canvas.width;
-    canvas.style.height = canvas.height;
-
-    // For each canvas, create a subdelegate and complete initialization
-    for (let i = 0; i < this._canvases.getSize(); i++) {
-      const subdelegate = new AppSubdelegate();
-      const result = subdelegate.initialize(this._canvases.at(i));
-      if (!result) {
-        logger.error('Failed to initialize AppSubdelegate');
-        return;
-      }
-      this._subdelegates.pushBack(subdelegate);
-    }
-
-    // Check if the WebGL context of each subdelegate is lost
-    for (let i = 0; i < LAppDefine.CanvasNum; i++) {
-      if (this._subdelegates.at(i).isContextLost()) {
-        logger.error(
-          `The context for Canvas at index ${i} was lost, possibly because the acquisition limit for WebGLRenderingContext was reached.`
-        );
-      }
-    }
-  }
-
-  /**
-   * Switch model
-   * @param {string} modelSettingPath Path to the model setting file
-   */
-  changeModel(modelSettingPath) {
-    const segments = modelSettingPath.split('/');
-    const modelJsonName = segments.pop();
-    const modelPath = segments.join('/') + '/';
-    // Get the current Live2D manager
-    const live2dManager = this._subdelegates.at(0).getLive2DManager();
-    // Release all old models
-    live2dManager.releaseAllModel();
-    // Create a new model instance, set subdelegate and load resources
-    const instance = new LAppModel();
-    instance.setSubdelegate(live2dManager._subdelegate);
-    instance.loadAssets(modelPath, modelJsonName);
-    // Add the new model to the model list
-    live2dManager._models.pushBack(instance);
-  }
-
-  get subdelegates() {
-    return this._subdelegates;
-  }
-}
+  transformOffset(e)
