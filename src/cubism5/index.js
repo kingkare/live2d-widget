@@ -4,7 +4,7 @@ import { LAppDelegate } from '@demo/lappdelegate.js';
 import { LAppSubdelegate } from '@demo/lappsubdelegate.js';
 import * as LAppDefine from '@demo/lappdefine.js';
 import { LAppModel } from '@demo/lappmodel.js';
-import { LAppPal } from '@demo/lappPal';
+import { LAppPal } from '@demo/lapppal.js';
 import logger from '../logger.js';
 
 LAppPal.printMessage = () => {};
